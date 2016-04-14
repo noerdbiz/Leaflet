@@ -2,8 +2,18 @@
  * L.Map.Tap is used to enable mobile hacks like quick taps and long hold.
  */
 
+// @namespace Map
+// @section Interaction Options
 L.Map.mergeOptions({
+	// @section Touch interaction options
+	// @option tap: Boolean = true
+	// Enables mobile hacks for supporting instant taps (fixing 200ms click
+	// delay on iOS/Android) and touch holds (fired as `contextmenu` events).
 	tap: true,
+
+	// @option tapTolerance: Number = 15
+	// The max number of pixels a user can shift his finger during touch
+	// for it to be considered a valid tap.
 	tapTolerance: 15
 });
 
@@ -48,7 +58,7 @@ L.Map.Tap = L.Handler.extend({
 				this._simulateEvent('contextmenu', first);
 			}
 		}, this), 1000);
-		
+
 		this._simulateEvent('mousedown', first);
 
 		L.DomEvent.on(document, {
@@ -73,7 +83,7 @@ L.Map.Tap = L.Handler.extend({
 			if (el && el.tagName && el.tagName.toLowerCase() === 'a') {
 				L.DomUtil.removeClass(el, 'leaflet-active');
 			}
-			
+
 			this._simulateEvent('mouseup', first);
 
 			// simulate click if the touch didn't move too much
@@ -90,6 +100,7 @@ L.Map.Tap = L.Handler.extend({
 	_onMove: function (e) {
 		var first = e.touches[0];
 		this._newPos = new L.Point(first.clientX, first.clientY);
+		this._simulateEvent('mousemove', first);
 	},
 
 	_simulateEvent: function (type, e) {
@@ -108,6 +119,9 @@ L.Map.Tap = L.Handler.extend({
 	}
 });
 
+// @section Handlers
+// @property tap: Handler
+// Mobile touch hacks (quick tap and touch hold) handler.
 if (L.Browser.touch && !L.Browser.pointer) {
 	L.Map.addInitHook('addHandler', 'tap', L.Map.Tap);
 }

@@ -1,5 +1,33 @@
 /*
- * L.Canvas handles Canvas vector layers rendering and mouse events handling. All Canvas-specific code goes here.
+ * @class Canvas
+ * @inherits Renderer
+ * @aka L.Canvas
+ *
+ * Allows vector layers to be displayed with [`<canvas>`](https://developer.mozilla.org/docs/Web/API/Canvas_API).
+ * Inherits `Renderer`.
+ *
+ * Due to [technical limitations](http://caniuse.com/#search=canvas), Canvas is not
+ * available in all web browsers, notably IE8, and overlapping geometries might
+ * not display properly in some edge cases.
+ *
+ * @example
+ *
+ * Use Canvas by default for all paths in the map:
+ *
+ * ```js
+ * var map = L.map('map', {
+ * 	renderer: L.canvas();
+ * });
+ * ```
+ *
+ * Use a Canvas renderer with extra padding for specific vector geometries:
+ *
+ * ```js
+ * var map = L.map('map');
+ * var myRenderer = L.canvas({ padding: 0.5 });
+ * var line = L.polyline( coordinates, { renderer: myRenderer } );
+ * var circle = L.circle( center, { renderer: myRenderer } );
+ * ```
  */
 
 L.Canvas = L.Renderer.extend({
@@ -9,7 +37,8 @@ L.Canvas = L.Renderer.extend({
 
 		this._layers = this._layers || {};
 
-		// redraw vectors since canvas is cleared upon removal
+		// Redraw vectors since canvas is cleared upon removal,
+		// in case of removing the renderer itself from the map.
 		this._draw();
 	},
 
@@ -17,14 +46,17 @@ L.Canvas = L.Renderer.extend({
 		var container = this._container = document.createElement('canvas');
 
 		L.DomEvent
-			.on(container, 'mousemove', this._onMouseMove, this)
-			.on(container, 'click dblclick mousedown mouseup contextmenu', this._onClick, this);
+			.on(container, 'mousemove', L.Util.throttle(this._onMouseMove, 32, this), this)
+			.on(container, 'click dblclick mousedown mouseup contextmenu', this._onClick, this)
+			.on(container, 'mouseout', this._handleMouseOut, this);
 
 		this._ctx = container.getContext('2d');
 	},
 
 	_update: function () {
 		if (this._map._animatingZoom && this._bounds) { return; }
+
+		this._drawnLayers = {};
 
 		L.Renderer.prototype._update.call(this);
 
@@ -50,6 +82,7 @@ L.Canvas = L.Renderer.extend({
 	},
 
 	_initPath: function (layer) {
+		this._updateDashArray(layer);
 		this._layers[L.stamp(layer)] = layer;
 	},
 
@@ -70,14 +103,29 @@ L.Canvas = L.Renderer.extend({
 	},
 
 	_updateStyle: function (layer) {
+		this._updateDashArray(layer);
 		this._requestRedraw(layer);
+	},
+
+	_updateDashArray: function (layer) {
+		if (layer.options.dashArray) {
+			var parts = layer.options.dashArray.split(','),
+			    dashArray = [],
+			    i;
+			for (i = 0; i < parts.length; i++) {
+				dashArray.push(Number(parts[i]));
+			}
+			layer.options._dashArray = dashArray;
+		}
 	},
 
 	_requestRedraw: function (layer) {
 		if (!this._map) { return; }
 
+		var padding = (layer.options.weight || 0) + 1;
 		this._redrawBounds = this._redrawBounds || new L.Bounds();
-		this._redrawBounds.extend(layer._pxBounds.min).extend(layer._pxBounds.max);
+		this._redrawBounds.extend(layer._pxBounds.min.subtract([padding, padding]));
+		this._redrawBounds.extend(layer._pxBounds.max.add([padding, padding]));
 
 		this._redrawRequest = this._redrawRequest || L.Util.requestAnimFrame(this._redraw, this);
 	},
@@ -93,11 +141,17 @@ L.Canvas = L.Renderer.extend({
 
 	_draw: function (clear) {
 		this._clear = clear;
-		var layer;
+		var layer, bounds = this._redrawBounds;
+		this._ctx.save();
+		if (bounds) {
+			this._ctx.beginPath();
+			this._ctx.rect(bounds.min.x, bounds.min.y, bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y);
+			this._ctx.clip();
+		}
 
 		for (var id in this._layers) {
 			layer = this._layers[id];
-			if (!this._redrawBounds || layer._pxBounds.intersects(this._redrawBounds)) {
+			if (!bounds || layer._pxBounds.intersects(bounds)) {
 				layer._updatePath();
 			}
 			if (clear && layer._removed) {
@@ -105,6 +159,7 @@ L.Canvas = L.Renderer.extend({
 				delete this._layers[id];
 			}
 		}
+		this._ctx.restore();  // Restore state before clipping.
 	},
 
 	_updatePoly: function (layer, closed) {
@@ -114,9 +169,15 @@ L.Canvas = L.Renderer.extend({
 		    len = parts.length,
 		    ctx = this._ctx;
 
-	    if (!len) { return; }
+		if (!len) { return; }
+
+		this._drawnLayers[layer._leaflet_id] = layer;
 
 		ctx.beginPath();
+
+		if (ctx.setLineDash) {
+			ctx.setLineDash(layer.options && layer.options._dashArray || []);
+		}
 
 		for (i = 0; i < len; i++) {
 			for (j = 0, len2 = parts[i].length; j < len2; j++) {
@@ -141,6 +202,8 @@ L.Canvas = L.Renderer.extend({
 		    ctx = this._ctx,
 		    r = layer._radius,
 		    s = (layer._radiusY || r) / r;
+
+		this._drawnLayers[layer._leaflet_id] = layer;
 
 		if (s !== 1) {
 			ctx.save();
@@ -169,7 +232,7 @@ L.Canvas = L.Renderer.extend({
 			ctx.fill(options.fillRule || 'evenodd');
 		}
 
-		if (options.stroke) {
+		if (options.stroke && options.weight !== 0) {
 			ctx.globalAlpha = clear ? 1 : options.opacity;
 
 			// if clearing shape, do it with the previously drawn line width
@@ -186,45 +249,58 @@ L.Canvas = L.Renderer.extend({
 	// so we emulate that by calculating what's under the mouse on mousemove/click manually
 
 	_onClick: function (e) {
-		var point = this._map.mouseEventToLayerPoint(e);
+		var point = this._map.mouseEventToLayerPoint(e), layers = [], layer;
 
 		for (var id in this._layers) {
-			if (this._layers[id]._containsPoint(point)) {
-				this._layers[id]._fireMouseEvent(e);
+			layer = this._layers[id];
+			if (layer.options.interactive && layer._containsPoint(point)) {
+				L.DomEvent._fakeStop(e);
+				layers.push(layer);
 			}
+		}
+		if (layers.length)  {
+			this._fireEvent(layers, e);
 		}
 	},
 
 	_onMouseMove: function (e) {
-		if (!this._map || this._map._animatingZoom) { return; }
+		if (!this._map || this._map.dragging.moving() || this._map._animatingZoom) { return; }
 
 		var point = this._map.mouseEventToLayerPoint(e);
+		this._handleMouseOut(e, point);
+		this._handleMouseHover(e, point);
+	},
 
-		// TODO don't do on each move event, throttle since it's expensive
-		for (var id in this._layers) {
-			this._handleHover(this._layers[id], e, point);
+
+	_handleMouseOut: function (e, point) {
+		var layer = this._hoveredLayer;
+		if (layer && (e.type === 'mouseout' || !layer._containsPoint(point))) {
+			// if we're leaving the layer, fire mouseout
+			L.DomUtil.removeClass(this._container, 'leaflet-interactive');
+			this._fireEvent([layer], e, 'mouseout');
+			this._hoveredLayer = null;
 		}
 	},
 
-	_handleHover: function (layer, e, point) {
-		if (!layer.options.interactive) { return; }
+	_handleMouseHover: function (e, point) {
+		var id, layer;
 
-		if (layer._containsPoint(point)) {
-			// if we just got inside the layer, fire mouseover
-			if (!layer._mouseInside) {
+		for (id in this._drawnLayers) {
+			layer = this._drawnLayers[id];
+			if (layer.options.interactive && layer._containsPoint(point)) {
 				L.DomUtil.addClass(this._container, 'leaflet-interactive'); // change cursor
-				layer._fireMouseEvent(e, 'mouseover');
-				layer._mouseInside = true;
+				this._fireEvent([layer], e, 'mouseover');
+				this._hoveredLayer = layer;
 			}
-			// fire mousemove
-			layer._fireMouseEvent(e);
-
-		} else if (layer._mouseInside) {
-			// if we're leaving the layer, fire mouseout
-			L.DomUtil.removeClass(this._container, 'leaflet-interactive');
-			layer._fireMouseEvent(e, 'mouseout');
-			layer._mouseInside = false;
 		}
+
+		if (this._hoveredLayer) {
+			this._fireEvent([this._hoveredLayer], e);
+		}
+	},
+
+	_fireEvent: function (layers, e, type) {
+		this._map._fireDOMEvent(e, type || e.type, layers);
 	},
 
 	// TODO _bringToFront & _bringToBack, pretty tricky
@@ -233,10 +309,15 @@ L.Canvas = L.Renderer.extend({
 	_bringToBack: L.Util.falseFn
 });
 
+// @namespace Browser; @property canvas: Boolean
+// `true` when the browser supports [`<canvas>`](https://developer.mozilla.org/docs/Web/API/Canvas_API).
 L.Browser.canvas = (function () {
 	return !!document.createElement('canvas').getContext;
 }());
 
+// @namespace Canvas
+// @factory L.canvas(options?: Canvas options)
+// Creates a Canvas renderer with the given options.
 L.canvas = function (options) {
 	return L.Browser.canvas ? new L.Canvas(options) : null;
 };

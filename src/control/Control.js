@@ -1,10 +1,18 @@
 /*
+ * @class Control
+ * @aka L.Control
+ *
  * L.Control is a base class for implementing map controls. Handles positioning.
  * All other controls extend from this class.
  */
 
 L.Control = L.Class.extend({
+	// @section
+	// @aka Control options
 	options: {
+		// @option position: String = 'topleft'
+		// The position of the control (one of the map corners). Possible values are `'topleft'`,
+		// `'topright'`, `'bottomleft'` or `'bottomright'`
 		position: 'topright'
 	},
 
@@ -71,8 +79,9 @@ L.Control = L.Class.extend({
 		return this;
 	},
 
-	_refocusOnMap: function () {
-		if (this._map) {
+	_refocusOnMap: function (e) {
+		// if map exists and event is not a keyboard event
+		if (this._map && e && e.screenX > 0 && e.screenY > 0) {
 			this._map.getContainer().focus();
 		}
 	}

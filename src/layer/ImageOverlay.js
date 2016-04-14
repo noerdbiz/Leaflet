@@ -1,13 +1,42 @@
 /*
- * L.ImageOverlay is used to overlay images over the map (to specific geographical bounds).
+ * @class ImageOverlay
+ * @aka L.ImageOverlay
+ * @inherits Layer
+ *
+ * Used to load and display a single image over specific bounds of the map. Extends `Layer`.
+ *
+ * @example
+ *
+ * ```js
+ * var imageUrl = 'http://www.lib.utexas.edu/maps/historical/newark_nj_1922.jpg',
+ * 	imageBounds = [[40.712216, -74.22655], [40.773941, -74.12544]];
+ * L.imageOverlay(imageUrl, imageBounds).addTo(map);
+ * ```
  */
 
 L.ImageOverlay = L.Layer.extend({
 
 	options: {
+		// @option opacity: Number = 1.0
+		// The opacity of the image overlay.
 		opacity: 1,
+
+		// @option alt: String = ''
+		// Text for the `alt` attribute of the image (useful for accessibility).
 		alt: '',
-		interactive: false
+
+		// @option interactive: Boolean = true
+		// If `true`, the image overlay will emit mouse events when clicked or hovered.
+		interactive: false,
+
+		// @option attribution: String = null
+		// An optional string containing HTML to be shown on the `Attribution control`
+		attribution: null
+
+		// @option crossOrigin: Boolean = false
+		// If true, the image will have its crossOrigin attribute set to ''. This is needed if you want to access image pixel data.
+
+		// crossOrigin: false,
 	},
 
 	initialize: function (url, bounds, options) { // (String, LatLngBounds, Object)
@@ -26,15 +55,24 @@ L.ImageOverlay = L.Layer.extend({
 			}
 		}
 
+		if (this.options.interactive) {
+			L.DomUtil.addClass(this._image, 'leaflet-interactive');
+			this.addInteractiveTarget(this._image);
+		}
+
 		this.getPane().appendChild(this._image);
-		this._initInteraction();
 		this._reset();
 	},
 
 	onRemove: function () {
 		L.DomUtil.remove(this._image);
+		if (this.options.interactive) {
+			this.removeInteractiveTarget(this._image);
+		}
 	},
 
+	// @method setOpacity(): this
+	// Sets the opacity of the overlay.
 	setOpacity: function (opacity) {
 		this.options.opacity = opacity;
 
@@ -51,6 +89,8 @@ L.ImageOverlay = L.Layer.extend({
 		return this;
 	},
 
+	// @method bringToFront(): this
+	// Brings the layer to the top of all overlays.
 	bringToFront: function () {
 		if (this._map) {
 			L.DomUtil.toFront(this._image);
@@ -58,6 +98,8 @@ L.ImageOverlay = L.Layer.extend({
 		return this;
 	},
 
+	// @method bringToBack(): this
+	// Brings the layer to the bottom of all overlays.
 	bringToBack: function () {
 		if (this._map) {
 			L.DomUtil.toBack(this._image);
@@ -65,24 +107,22 @@ L.ImageOverlay = L.Layer.extend({
 		return this;
 	},
 
-	_initInteraction: function () {
-		if (!this.options.interactive) { return; }
-		L.DomUtil.addClass(this._image, 'leaflet-interactive');
-		L.DomEvent.on(this._image, 'click dblclick mousedown mouseup mouseover mousemove mouseout contextmenu',
-				this._fireMouseEvent, this);
-	},
-
-	_fireMouseEvent: function (e, type) {
-		if (this._map) {
-			this._map._fireMouseEvent(this, e, type, true);
-		}
-	},
-
+	// @method setUrl(url: String): this
+	// Changes the URL of the image.
 	setUrl: function (url) {
 		this._url = url;
 
 		if (this._image) {
 			this._image.src = url;
+		}
+		return this;
+	},
+
+	setBounds: function (bounds) {
+		this._bounds = bounds;
+
+		if (this._map) {
+			this._reset();
 		}
 		return this;
 	},
@@ -93,6 +133,7 @@ L.ImageOverlay = L.Layer.extend({
 
 	getEvents: function () {
 		var events = {
+			zoom: this._reset,
 			viewreset: this._reset
 		};
 
@@ -107,6 +148,10 @@ L.ImageOverlay = L.Layer.extend({
 		return this._bounds;
 	},
 
+	getElement: function () {
+		return this._image;
+	},
+
 	_initImage: function () {
 		var img = this._image = L.DomUtil.create('img',
 				'leaflet-image-layer ' + (this._zoomAnimated ? 'leaflet-zoom-animated' : ''));
@@ -115,18 +160,20 @@ L.ImageOverlay = L.Layer.extend({
 		img.onmousemove = L.Util.falseFn;
 
 		img.onload = L.bind(this.fire, this, 'load');
+
+		if (this.options.crossOrigin) {
+			img.crossOrigin = '';
+		}
+
 		img.src = this._url;
 		img.alt = this.options.alt;
 	},
 
 	_animateZoom: function (e) {
-		var bounds = new L.Bounds(
-			this._map._latLngToNewLayerPoint(this._bounds.getNorthWest(), e.zoom, e.center),
-		    this._map._latLngToNewLayerPoint(this._bounds.getSouthEast(), e.zoom, e.center));
+		var scale = this._map.getZoomScale(e.zoom),
+		    offset = this._map._latLngToNewLayerPoint(this._bounds.getNorthWest(), e.zoom, e.center);
 
-		var offset = bounds.min.add(bounds.getSize()._multiplyBy((1 - 1 / e.scale) / 2));
-
-		L.DomUtil.setTransform(this._image, offset, e.scale);
+		L.DomUtil.setTransform(this._image, offset, scale);
 	},
 
 	_reset: function () {
@@ -147,6 +194,9 @@ L.ImageOverlay = L.Layer.extend({
 	}
 });
 
+// @factory L.imageOverlay(imageUrl: String, bounds: LatLngBounds, options?: ImageOverlay options)
+// Instantiates an image overlay object given the URL of the image and the
+// geographical bounds it is tied to.
 L.imageOverlay = function (url, bounds, options) {
 	return new L.ImageOverlay(url, bounds, options);
 };

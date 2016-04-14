@@ -11,9 +11,14 @@
 	<script src="expect.js"></script>
 	<script type="text/javascript" src="../node_modules/mocha/mocha.js"></script>
 	<script type="text/javascript" src="../node_modules/happen/happen.js"></script>
+	<script type="text/javascript" src="../node_modules/prosthetic-hand/dist/prosthetic-hand.js"></script>
 	<script type="text/javascript" src="sinon.js"></script>
 
 	<!-- source files -->
+	<script>
+		// Trick Leaflet into believing we have a touchscreen (for Chrome)
+		if (window.Touch) { window.ontouchstart = function(){} };
+	</script>
 	<script type="text/javascript" src="../build/deps.js"></script>
 
 	<script type="text/javascript" src="../debug/leaflet-include.js"></script>
@@ -77,12 +82,17 @@
 	<script type="text/javascript" src="suites/layer/vector/PolygonSpec.js"></script>
 	<script type="text/javascript" src="suites/layer/vector/PolylineSpec.js"></script>
 	<script type="text/javascript" src="suites/layer/vector/PolylineGeometrySpec.js"></script>
+	<script type="text/javascript" src="suites/layer/vector/CanvasSpec.js"></script>
 
 	<!-- /map -->
 	<script type="text/javascript" src="suites/map/MapSpec.js"></script>
 
 	<!-- /map/handler -->
 	<script type="text/javascript" src="suites/map/handler/Map.DragSpec.js"></script>
+	<script type="text/javascript" src="suites/map/handler/Map.TouchZoomSpec.js"></script>
+
+	<!-- /geo/crs -->
+	<script type="text/javascript" src="suites/geo/CRSSpec.js"></script>
 
 	<script>
 		(window.mochaPhantomJS || window.mocha).run();

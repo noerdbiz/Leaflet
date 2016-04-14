@@ -1,16 +1,23 @@
 /*
- * L.LineUtil contains different utility functions for line segments
- * and polylines (clipping, simplification, distances, etc.)
+ * @namespace LineUtil
+ *
+ * Various utility functions for polyine points processing, used by Leaflet internally to make polylines lightning-fast.
  */
-
-/*jshint bitwise:false */ // allow bitwise operations for this file
 
 L.LineUtil = {
 
 	// Simplify polyline with vertex reduction and Douglas-Peucker simplification.
 	// Improves rendering performance dramatically by lessening the number of points to draw.
 
-	simplify: function (/*Point[]*/ points, /*Number*/ tolerance) {
+	// @function simplify(points: Point[], tolerance: Number): Point[]
+	// Dramatically reduces the number of points in a polyline while retaining
+	// its shape and returns a new array of simplified points, using the
+	// [Douglas-Peucker algorithm](http://en.wikipedia.org/wiki/Douglas-Peucker_algorithm).
+	// Used for a huge performance boost when processing/displaying Leaflet polylines for
+	// each zoom level and also reducing visual noise. tolerance affects the amount of
+	// simplification (lesser value means higher quality but slower and with more points).
+	// Also released as a separated micro-library [Simplify.js](http://mourner.github.com/simplify-js/).
+	simplify: function (points, tolerance) {
 		if (!tolerance || !points.length) {
 			return points.slice();
 		}
@@ -26,12 +33,15 @@ L.LineUtil = {
 		return points;
 	},
 
-	// distance from a point to a segment between two points
-	pointToSegmentDistance:  function (/*Point*/ p, /*Point*/ p1, /*Point*/ p2) {
+	// @function pointToSegmentDistance(p: Point, p1: Point, p2: Point): Number
+	// Returns the distance between point `p` and segment `p1` to `p2`.
+	pointToSegmentDistance:  function (p, p1, p2) {
 		return Math.sqrt(this._sqClosestPointOnSegment(p, p1, p2, true));
 	},
 
-	closestPointOnSegment: function (/*Point*/ p, /*Point*/ p1, /*Point*/ p2) {
+	// @function closestPointOnSegment(p: Point, p1: Point, p2: Point): Number
+	// Returns the closest point from a point `p` on a segment `p1` to `p2`.
+	closestPointOnSegment: function (p, p1, p2) {
 		return this._sqClosestPointOnSegment(p, p1, p2);
 	},
 
@@ -96,10 +106,12 @@ L.LineUtil = {
 		return reducedPoints;
 	},
 
-	// Cohen-Sutherland line clipping algorithm.
-	// Used to avoid rendering parts of a polyline that are not currently visible.
 
-	clipSegment: function (a, b, bounds, useLastCode) {
+	// Clips the segment a to b by rectangular bounds with the
+	// [Cohen-Sutherland algorithm](https://en.wikipedia.org/wiki/Cohen%E2%80%93Sutherland_algorithm)
+	// (modifying the segment points directly!). Used by Leaflet to only show polyline
+	// points that are on the screen or near, increasing performance.
+	clipSegment: function (a, b, bounds, useLastCode, round) {
 		var codeA = useLastCode ? this._lastCode : this._getBitCode(a, bounds),
 		    codeB = this._getBitCode(b, bounds),
 
@@ -110,29 +122,27 @@ L.LineUtil = {
 
 		while (true) {
 			// if a,b is inside the clip window (trivial accept)
-			if (!(codeA | codeB)) {
-				return [a, b];
-			// if a,b is outside the clip window (trivial reject)
-			} else if (codeA & codeB) {
-				return false;
-			// other cases
-			} else {
-				codeOut = codeA || codeB;
-				p = this._getEdgeIntersection(a, b, codeOut, bounds);
-				newCode = this._getBitCode(p, bounds);
+			if (!(codeA | codeB)) { return [a, b]; }
 
-				if (codeOut === codeA) {
-					a = p;
-					codeA = newCode;
-				} else {
-					b = p;
-					codeB = newCode;
-				}
+			// if a,b is outside the clip window (trivial reject)
+			if (codeA & codeB) { return false; }
+
+			// other cases
+			codeOut = codeA || codeB;
+			p = this._getEdgeIntersection(a, b, codeOut, bounds, round);
+			newCode = this._getBitCode(p, bounds);
+
+			if (codeOut === codeA) {
+				a = p;
+				codeA = newCode;
+			} else {
+				b = p;
+				codeB = newCode;
 			}
 		}
 	},
 
-	_getEdgeIntersection: function (a, b, code, bounds) {
+	_getEdgeIntersection: function (a, b, code, bounds, round) {
 		var dx = b.x - a.x,
 		    dy = b.y - a.y,
 		    min = bounds.min,
@@ -156,10 +166,10 @@ L.LineUtil = {
 			y = a.y + dy * (min.x - a.x) / dx;
 		}
 
-		return new L.Point(x, y, true);
+		return new L.Point(x, y, round);
 	},
 
-	_getBitCode: function (/*Point*/ p, bounds) {
+	_getBitCode: function (p, bounds) {
 		var code = 0;
 
 		if (p.x < bounds.min.x) { // left

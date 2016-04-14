@@ -1,9 +1,14 @@
 /*
- * L.Handler.ShiftDragZoom is used to add shift-drag zoom interaction to the map
-  * (zoom to a selected bounding box), enabled by default.
+ * L.Handler.BoxZoom is used to add shift-drag zoom interaction to the map
+ * (zoom to a selected bounding box), enabled by default.
  */
 
+// @namespace Map
+// @section Interaction Options
 L.Map.mergeOptions({
+	// @option boxZoom: Boolean = true
+	// Whether the map can be zoomed to a rectangular area specified by
+	// dragging the mouse while pressing the shift key.
 	boxZoom: true
 });
 
@@ -26,10 +31,14 @@ L.Map.BoxZoom = L.Handler.extend({
 		return this._moved;
 	},
 
+	_resetState: function () {
+		this._moved = false;
+	},
+
 	_onMouseDown: function (e) {
 		if (!e.shiftKey || ((e.which !== 1) && (e.button !== 1))) { return false; }
 
-		this._moved = false;
+		this._resetState();
 
 		L.DomUtil.disableTextSelection();
 		L.DomUtil.disableImageDrag();
@@ -83,11 +92,14 @@ L.Map.BoxZoom = L.Handler.extend({
 	},
 
 	_onMouseUp: function (e) {
-		if ((e.which !== 1) && (e.button !== 1)) { return false; }
+		if ((e.which !== 1) && (e.button !== 1)) { return; }
 
 		this._finish();
 
 		if (!this._moved) { return; }
+		// Postpone to next JS tick so internal click event handling
+		// still see it as "moved".
+		setTimeout(L.bind(this._resetState, this), 0);
 
 		var bounds = new L.LatLngBounds(
 		        this._map.containerPointToLatLng(this._startPoint),
@@ -105,4 +117,7 @@ L.Map.BoxZoom = L.Handler.extend({
 	}
 });
 
+// @section Handlers
+// @property boxZoom: Handler
+// Box (shift-drag with mouse) zoom handler.
 L.Map.addInitHook('addHandler', 'boxZoom', L.Map.BoxZoom);

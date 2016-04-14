@@ -17,6 +17,17 @@ describe('LatLngBounds', function () {
 			expect(b).to.eql(a);
 			expect(b.getNorthWest()).to.eql(new L.LatLng(30, 12));
 		});
+
+		it('returns an empty bounds when not argument is given', function () {
+			var bounds = new L.LatLngBounds();
+			expect(bounds instanceof L.LatLngBounds).to.be.ok(a);
+		});
+
+		it('returns an empty bounds when not argument is given to factory', function () {
+			var bounds = L.latLngBounds();
+			expect(bounds instanceof L.LatLngBounds).to.be.ok(a);
+		});
+
 	});
 
 	describe('#extend', function () {
@@ -142,6 +153,19 @@ describe('LatLngBounds', function () {
 		it('returns true if intersects the given bounds', function () {
 			expect(a.intersects([[16, 20], [50, 60]])).to.eql(true);
 			expect(a.contains([[40, 50], [50, 60]])).to.eql(false);
+		});
+
+		it('returns true if just touches the boundary of the given bounds', function () {
+			expect(a.intersects([[25, 40], [55, 50]])).to.eql(true);
+		});
+	});
+
+	describe('#overlaps', function () {
+		it('returns true if overlaps the given bounds', function () {
+			expect(a.overlaps([[16, 20], [50, 60]])).to.eql(true);
+		});
+		it('returns false if just touches the boundary of the given bounds', function () {
+			expect(a.overlaps([[25, 40], [55, 50]])).to.eql(false);
 		});
 	});
 
